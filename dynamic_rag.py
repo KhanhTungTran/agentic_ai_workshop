@@ -1,12 +1,14 @@
-"""Minimal Dynamic RAG Tutorial Example using CloudCIX tool calls.
+"""Minimal Dynamic RAG Tutorial Example using CloudCIX tool calls, themed for Tolkien lore.
+
+New to agentic AI? Think of the model as an "agent" that can choose tools on its own.
+Here, the model decides whether to call `retrieve_information` (vector search) before
+answering, demonstrating how LLMs can plan tool use instead of being explicitly told.
 
 Flow Overview:
 1. Send initial user query to CloudCIX hosted LLM with a tool spec (retrieve_information).
 2. Model may decide to call the tool (this is the dynamic part of RAG: model chooses retrieval).
 3. We execute the tool, performing a vector search against the CloudCIX embedding DB.
 4. Feed retrieved context back to the model for a grounded final answer.
-
-Logging is added at each step to make the process transparent for tutorial purposes.
 """
 
 import json
@@ -17,7 +19,7 @@ from typing import List
 from openai import OpenAI
 
 # -----------------------------------------------------------------------------
-# Logging Setup (simple, tutorial-friendly)
+# Logging Setup
 # -----------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +28,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # -----------------------------------------------------------------------------
-# Configuration (in tutorials prefer environment variable over hardcoded secret)
+# Configuration (environment variable over hardcoded secret)
 # -----------------------------------------------------------------------------
 CLOUDCIX_API_KEY = os.getenv(
     "CLOUDCIX_API_KEY"
@@ -37,17 +39,17 @@ client = OpenAI(
     base_url="https://ml-openai.cloudcix.com",  # CloudCIX OpenAI-compatible endpoint
 )
 
-TEMP = 0.10
+TEMP = 0.15
 MAX_TOK = 8192
 
-model = "GPT-4.1" # "UCCIX-Mistral-24B"
+model = "UCCIX-Mistral-24B"
 
 tools = [
     {
         "type": "function",
         "function": {
             "name": "retrieve_information",
-            "description": "Vector search in CloudCIX embedding DB for context about AI For Ireland.",
+            "description": "Vector search in CloudCIX embedding DB for context about J.R.R. Tolkien and Middle-earth.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -73,9 +75,9 @@ def retrieve_information(query: str) -> str:
 
     payload = {
         "api_key": CLOUDCIX_API_KEY,
-        "names": ["AIFI"],  # collection names
+        "names": ["Tolkien"],  # collection names
         "method": "vector_search",
-        "encoder_name": "test_encoder",
+        "encoder_name": "gte-large-en-v1.5_question_encoder",
         "query": query,
         "order_by": "euclidean_distance",
         "threshold": "25.0",
@@ -90,14 +92,19 @@ def retrieve_information(query: str) -> str:
     log.info("[tool] Raw embedding DB response keys: %s", list(dct.keys()))
 
     output_lines: List[str] = []
-    for k, v in dct.items():
-        output_lines.append(f"Source {k}: {v}")
+    for item in dct.get("content", []):
+        source = item[0]
+        content = item[1]
+        output_lines.append(f"Source {source}: {content}")
     joined = "\n\n".join(output_lines).strip()
     log.info("[tool] Compiled %d source snippet(s) for model context injection", len(output_lines))
     return joined
 
 for USER_QUESTION in [
-    "What is ai for ireland?",
+    "When was Tolkien born?",
+    "Where was the home of Bilbo Baggins?",
+    "Where is Hobbiton located within the Shire?",
+    "Where is Hobbiton located within the Shire (North, East, South, West)?",
     "What is a cat?",
 ]:
 

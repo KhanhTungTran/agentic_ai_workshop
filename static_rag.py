@@ -1,12 +1,14 @@
-"""Minimal Static RAG Tutorial Example using CloudCIX tool calls.
+"""Minimal Static RAG Tutorial Example using CloudCIX tool calls, themed for Tolkien lore.
+
+New to agentic AI? This example is "non-agentic": the developer always calls
+`retrieve_information` (vector search) before the model answers. Use it to compare with
+the dynamic version where the model decides on tool use.
 
 Flow Overview:
 1. Send initial user query to CloudCIX hosted LLM with a tool spec (retrieve_information).
 2. Always call the tool.
 3. We execute the tool, performing a vector search against the CloudCIX embedding DB.
 4. Feed retrieved context back to the model for a grounded final answer.
-
-Logging is added at each step to make the process transparent for tutorial purposes.
 """
 
 import json
@@ -17,7 +19,7 @@ from typing import List
 from openai import OpenAI
 
 # -----------------------------------------------------------------------------
-# Logging Setup (simple, tutorial-friendly)
+# Logging Setup
 # -----------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +28,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # -----------------------------------------------------------------------------
-# Configuration (in tutorials prefer environment variable over hardcoded secret)
+# Configuration (environment variable over hardcoded secret)
 # -----------------------------------------------------------------------------
 CLOUDCIX_API_KEY = os.getenv(
     "CLOUDCIX_API_KEY"
@@ -37,17 +39,17 @@ client = OpenAI(
     base_url="https://ml-openai.cloudcix.com",  # CloudCIX OpenAI-compatible endpoint
 )
 
-TEMP = 0.10
+TEMP = 0.6
 MAX_TOK = 8192
 
-model = "GPT-4.1" # "UCCIX-Mistral-24B"
+model = "UCCIX-Mistral-24B"
 
 tools = [
     {
         "type": "function",
         "function": {
             "name": "retrieve_information",
-            "description": "Vector search in CloudCIX embedding DB for context about AI For Ireland.",
+            "description": "Vector search in CloudCIX embedding DB for context about J.R.R. Tolkien and Middle-earth.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -63,22 +65,22 @@ tools = [
 ]
 
 def retrieve_information(query: str) -> str:
-    """Call CloudCIX embedding DB for a small vector search.
+    """Call CloudCIX embedding DB for a vector search.
 
     Returns a concatenated string of sources for easy injection as context.
     """
-    import requests  # local import keeps top-level clean for tutorial
+    import requests
 
     url = "https://ml.cloudcix.com/embedding_db/"
 
     payload = {
         "api_key": CLOUDCIX_API_KEY,
-        "names": ["AIFI"],  # collection names
-        "method": "vector_search",
-        "encoder_name": "test_encoder",
+        "names": ["Tolkien"],  # collection names
+        "method": "keyword_search",
+        "encoder_name": "gte-large-en-v1.5_question_encoder",
         "query": query,
         "order_by": "euclidean_distance",
-        "threshold": "25.0",
+        "threshold": "999.0",
         "limit": "3",
     }
 
@@ -90,18 +92,21 @@ def retrieve_information(query: str) -> str:
     log.info("[tool] Raw embedding DB response keys: %s", list(dct.keys()))
 
     output_lines: List[str] = []
-    for k, v in dct.items():
-        output_lines.append(f"Source {k}: {v}")
+    for item in dct.get("content", []):
+        source = item[0]
+        content = item[1]
+        output_lines.append(f"Source {source}: {content}")
     joined = "\n\n".join(output_lines).strip()
     log.info("[tool] Compiled %d source snippet(s) for model context injection", len(output_lines))
     return joined
 
-
-
-
 for USER_QUESTION in [
-    "What is ai for ireland?",
-    "What is a cat?",
+    # "When was Tolkien born?",
+    # "Do you know much about the history of middle earth?",
+    # "What is a cat?",
+    "Where was the home of Bilbo Baggins?",
+    # "Where is Hobbiton located within the Shire?",
+    "Where is Hobbiton located within the Shire (North, East, South, West)?",
 ]:
 
     messages = [
@@ -117,8 +122,6 @@ for USER_QUESTION in [
         messages=messages,
         temperature=TEMP,
         max_tokens=MAX_TOK,
-        # tools=tools,
-        # tool_choice="auto",  # let model decide if it wants retrieval
     )
 
     final_answer = response.choices[0].message.content
@@ -126,8 +129,12 @@ for USER_QUESTION in [
 
 
 for USER_QUESTION in [
-    "What is ai for ireland?",
-    "What is a cat?",
+    # "When was Tolkien born?",
+    # "Do you know much about the history of middle earth?",
+    "Where was the home of Bilbo Baggins?",
+    # "Where is Hobbiton located within the Shire?",
+    "Where is Hobbiton located within the Shire (North, East, South, West)?",
+    # "What is a cat?",
 ]:
 
     messages = [
@@ -150,8 +157,6 @@ for USER_QUESTION in [
         messages=messages,
         temperature=TEMP,
         max_tokens=MAX_TOK,
-        # tools=tools,
-        # tool_choice="auto",  # let model decide if it wants retrieval
     )
 
     final_answer = response.choices[0].message.content
