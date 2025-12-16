@@ -1,14 +1,15 @@
-"""Minimal Dynamic RAG Tutorial Example using CloudCIX tool calls, themed for Tolkien lore.
+"""Minimal Dynamic RAG Tutorial Example using CloudCIX tool calls.
 
 New to agentic AI? Think of the model as an "agent" that can choose tools on its own.
 Here, the model decides whether to call `retrieve_information` (vector search) before
 answering, demonstrating how LLMs can plan tool use instead of being explicitly told.
 
 Flow Overview:
-1. Send initial user query to CloudCIX hosted LLM with a tool spec (retrieve_information).
-2. Model may decide to call the tool (this is the dynamic part of RAG: model chooses retrieval).
-3. We execute the tool, performing a vector search against the CloudCIX embedding DB.
-4. Feed retrieved context back to the model for a grounded final answer.
+1. Ask the LLM to decide if retrieval is needed for the user question.
+2. If yes, set tool_choice to the retrieve_information tool; otherwise set tool_choice to none.
+3. Send the user query to CloudCIX hosted LLM with the chosen tool_choice.
+4. If the model requested the tool, execute retrieve_information against the CloudCIX embedding DB.
+5. Feed any retrieved context back to the model for a grounded final answer.
 """
 
 import json
@@ -17,6 +18,9 @@ import os
 from typing import List
 
 from openai import OpenAI
+from openai.types.chat import ChatCompletionMessageFunctionToolCall
+from openai.types.chat.chat_completion_message_function_tool_call import \
+    Function
 
 # -----------------------------------------------------------------------------
 # Logging Setup
@@ -39,7 +43,7 @@ client = OpenAI(
     base_url="https://ml-openai.cloudcix.com",  # CloudCIX OpenAI-compatible endpoint
 )
 
-TEMP = 0.15
+TEMP = 0.60
 MAX_TOK = 8192
 
 model = "UCCIX-Mistral-24B"
@@ -49,7 +53,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "retrieve_information",
-            "description": "Vector search in CloudCIX embedding DB for context about J.R.R. Tolkien and Middle-earth.",
+            "description": "Vector search in CloudCIX embedding DB.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -69,19 +73,19 @@ def retrieve_information(query: str) -> str:
 
     Returns a concatenated string of sources for easy injection as context.
     """
-    import requests  # local import keeps top-level clean for tutorial
+    import requests
 
     url = "https://ml.cloudcix.com/embedding_db/"
 
     payload = {
         "api_key": CLOUDCIX_API_KEY,
-        "names": ["Tolkien"],  # collection names
+        "names": ["CloudCIX"],  # collection names
         "method": "vector_search",
-        "encoder_name": "gte-large-en-v1.5_question_encoder",
+        "encoder_name": "gte-large-en-v1.5",
         "query": query,
         "order_by": "euclidean_distance",
         "threshold": "25.0",
-        "limit": "3",
+        "limit": 3,
     }
 
     log.info("[tool] Sending vector search request to embedding DB")
@@ -100,11 +104,33 @@ def retrieve_information(query: str) -> str:
     log.info("[tool] Compiled %d source snippet(s) for model context injection", len(output_lines))
     return joined
 
+def should_use_retrieval(user_question: str) -> bool:
+    """Ask the LLM if the question needs CloudCIX-specific retrieval."""
+    decision_messages = [
+        {
+            "role": "user",
+            "content": (
+                "Decide if the following user question needs CloudCIX-specific context. "
+                "Reply with 'use_tool' if retrieval is needed, otherwise reply with 'no_tool'.\n" + user_question
+            ),
+        },
+    ]
+    log.info("Requesting retrieval decision from model")
+    resp = client.chat.completions.create(
+        model=model,
+        messages=decision_messages,
+        temperature=0,
+        max_tokens=4,
+        tool_choice="none",
+    )
+    decision = (resp.choices[0].message.content or "").lower()
+    use_tool = "use_tool" in decision
+    log.info("Decision: %s", "use_tool" if use_tool else "no_tool")
+    return use_tool
+
 for USER_QUESTION in [
-    "When was Tolkien born?",
-    "Where was the home of Bilbo Baggins?",
-    "Where is Hobbiton located within the Shire?",
-    "Where is Hobbiton located within the Shire (North, East, South, West)?",
+    "What is CloudCIX?",
+    "What is the difference between CloudCIX and CIX?",
     "What is a cat?",
 ]:
 
@@ -112,20 +138,26 @@ for USER_QUESTION in [
         {"role": "user", "content": USER_QUESTION}
     ]
 
-
     log.info("User query: %s", messages[0]["content"])
     log.info("Model selected: %s | Temperature: %.2f", model, TEMP)
 
     log.info("Tool spec registered: %s", tools[0]["function"]["name"])
 
-    log.info("Sending first chat completion request (tool_choice=auto)")
+    use_retrieval = should_use_retrieval(USER_QUESTION)
+    tool_choice = (
+        {"type": "function", "function": {"name": "retrieve_information"}}
+        if use_retrieval
+        else "none"
+    )
+
+    log.info("Sending first chat completion request (tool_choice=%s)", tool_choice)
     response = client.chat.completions.create(
         model=model,
         messages=messages,
         temperature=TEMP,
         max_tokens=MAX_TOK,
         tools=tools,
-        tool_choice="auto",  # let model decide if it wants retrieval
+        tool_choice=tool_choice,
     )
 
     tool_calls = response.choices[0].message.tool_calls

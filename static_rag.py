@@ -1,4 +1,4 @@
-"""Minimal Static RAG Tutorial Example using CloudCIX tool calls, themed for Tolkien lore.
+"""Minimal Static RAG Tutorial Example using CloudCIX tool calls.
 
 New to agentic AI? This example is "non-agentic": the developer always calls
 `retrieve_information` (vector search) before the model answers. Use it to compare with
@@ -49,7 +49,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "retrieve_information",
-            "description": "Vector search in CloudCIX embedding DB for context about J.R.R. Tolkien and Middle-earth.",
+            "description": "Vector search in CloudCIX embedding DB",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -75,13 +75,13 @@ def retrieve_information(query: str) -> str:
 
     payload = {
         "api_key": CLOUDCIX_API_KEY,
-        "names": ["Tolkien"],  # collection names
-        "method": "keyword_search",
-        "encoder_name": "gte-large-en-v1.5_question_encoder",
+        "names": ["CloudCIX"],  # collection names
+        "method": "vector_search",
+        "encoder_name": "gte-large-en-v1.5",
         "query": query,
         "order_by": "euclidean_distance",
-        "threshold": "999.0",
-        "limit": "3",
+        "threshold": "25.0",
+        "limit": 3,
     }
 
     log.info("[tool] Sending vector search request to embedding DB")
@@ -100,13 +100,14 @@ def retrieve_information(query: str) -> str:
     log.info("[tool] Compiled %d source snippet(s) for model context injection", len(output_lines))
     return joined
 
+
+# -----------------------------------------------------------------------------
+# Query without RAG (no context injection)
+# -----------------------------------------------------------------------------
 for USER_QUESTION in [
-    # "When was Tolkien born?",
-    # "Do you know much about the history of middle earth?",
-    # "What is a cat?",
-    "Where was the home of Bilbo Baggins?",
-    # "Where is Hobbiton located within the Shire?",
-    "Where is Hobbiton located within the Shire (North, East, South, West)?",
+    "What is CloudCIX?",
+    "What is the difference between CloudCIX and CIX?",
+    "What is a cat?",
 ]:
 
     messages = [
@@ -128,13 +129,13 @@ for USER_QUESTION in [
     log.info("Final Answer:\n%s\n\n", final_answer)
 
 
+# -----------------------------------------------------------------------------
+# Query with Static RAG (always retrieve context)
+# -----------------------------------------------------------------------------
 for USER_QUESTION in [
-    # "When was Tolkien born?",
-    # "Do you know much about the history of middle earth?",
-    "Where was the home of Bilbo Baggins?",
-    # "Where is Hobbiton located within the Shire?",
-    "Where is Hobbiton located within the Shire (North, East, South, West)?",
-    # "What is a cat?",
+    "What is CloudCIX?",
+    "What is the difference between CloudCIX and CIX?",
+    "What is a cat?",
 ]:
 
     messages = [
